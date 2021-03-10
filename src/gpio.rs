@@ -58,6 +58,10 @@ pub struct PullUp;
 /// Open drain input or output (type state)
 pub struct OpenDrain;
 
+/// Custom configuration that can switch between reading and writing in both open-drain+pullup and
+/// push-pull modes.
+pub struct Convertible;
+
 /// Output mode (type state)
 pub struct Output<MODE> {
     _mode: PhantomData<MODE>,
@@ -250,9 +254,9 @@ macro_rules! gpio {
 
             use crate::{pac::{RCC, EXTI}, bb, syscfg::SysCfg};
             use super::{
-                Alternate, AlternateOD, Floating, GpioExt, Input, OpenDrain, Output, Speed,
-                PullDown, PullUp, PushPull, AF0, AF1, AF2, AF3, AF4, AF5, AF6, AF7, AF8, AF9, AF10,
-                AF11, AF12, AF13, AF14, AF15, Analog, Edge, ExtiPin,
+                Alternate, AlternateOD, Convertible, Floating, GpioExt, Input, OpenDrain, Output,
+                Speed, PullDown, PullUp, PushPull, AF0, AF1, AF2, AF3, AF4, AF5, AF6, AF7, AF8,
+                AF9, AF10, AF11, AF12, AF13, AF14, AF15, Analog, Edge, ExtiPin,
             };
 
             /// GPIO parts
@@ -673,6 +677,73 @@ macro_rules! gpio {
 
                         $PXi { _mode: PhantomData }
                     }
+
+                    /// Starts the pin in open-drain pull-up mode as a readable pin.
+                    pub fn into_convertible(self) -> $PXi<Convertible> {
+                        let offset = 2 * $i;
+
+                        unsafe {
+                            &(*$GPIOX::ptr()).pupdr.modify(|r, w| {
+                                w.bits((r.bits() & !(0b11 << offset)) | (0b00 << offset))
+                            });
+                            &(*$GPIOX::ptr()).otyper.modify(|r, w| {
+                                w.bits(r.bits() | (0b1 << $i))
+                            });
+                            &(*$GPIOX::ptr()).moder.modify(|r, w| {
+                                w.bits((r.bits() & !(0b11 << offset)) | (0b01 << offset))
+                            })
+                        };
+
+                        $PXi { _mode: PhantomData }
+                    }
+                }
+
+                impl $PXi<Convertible> {
+                    pub fn set_open_drain_pull_up(&mut self) {
+                        let offset = 2 * $i;
+
+                        unsafe {
+                            &(*$GPIOX::ptr()).pupdr.modify(|r, w| {
+                                w.bits((r.bits() & !(0b11 << offset)) | (0b01 << offset))
+                            });
+                            &(*$GPIOX::ptr()).otyper.modify(|r, w| {
+                                w.bits(r.bits() | (0b1 << $i))
+                            });
+                        };
+                    }
+
+                    pub fn set_push_pull(&mut self) {
+                        let offset = 2 * $i;
+
+                        unsafe {
+                            &(*$GPIOX::ptr()).pupdr.modify(|r, w| {
+                                w.bits((r.bits() & !(0b11 << offset)) | (0b00 << offset))
+                            });
+                            &(*$GPIOX::ptr()).otyper.modify(|r, w| {
+                                w.bits(r.bits() & !(0b1 << $i))
+                            });
+                        };
+                    }
+
+                    pub fn set_readable(&mut self) {
+                        let offset = 2 * $i;
+
+                        unsafe {
+                            &(*$GPIOX::ptr()).moder.modify(|r, w| {
+                                w.bits((r.bits() & !(0b11 << offset)) | (0b00 << offset))
+                            })
+                        };
+                    }
+
+                    pub fn set_writeable(&mut self) {
+                        let offset = 2 * $i;
+
+                        unsafe {
+                            &(*$GPIOX::ptr()).moder.modify(|r, w| {
+                                w.bits((r.bits() & !(0b11 << offset)) | (0b01 << offset))
+                            })
+                        };
+                    }
                 }
 
                 impl<MODE> $PXi<Output<MODE>> {
@@ -774,6 +845,34 @@ macro_rules! gpio {
                     }
                 }
 
+                impl OutputPin for $PXi<Convertible> {
+                    type Error = ();
+
+                    fn set_high(&mut self) -> Result<(), Self::Error> {
+                        let offset = 2 * $i;
+                        // Return an error if moder is not 0b01 (output)
+                        if unsafe { (*$GPIOX::ptr()).moder.read().bits() } & (0b11 << offset) != (0b01 << offset) {
+                            return Err(());
+                        }
+
+                        // NOTE(unsafe) atomic write to a stateless register
+                        unsafe { (*$GPIOX::ptr()).bsrr.write(|w| w.bits(1 << $i)) };
+                        Ok(())
+                    }
+
+                    fn set_low(&mut self) -> Result<(), Self::Error> {
+                        let offset = 2 * $i;
+                        // Return an error if moder is not 0b01 (output)
+                        if unsafe { (*$GPIOX::ptr()).moder.read().bits() } & (0b11 << offset) != (0b01 << offset) {
+                            return Err(());
+                        }
+
+                        // NOTE(unsafe) atomic write to a stateless register
+                        unsafe { (*$GPIOX::ptr()).bsrr.write(|w| w.bits(1 << ($i + 16))) };
+                        Ok(())
+                    }
+                }
+
                 impl<MODE> StatefulOutputPin for $PXi<Output<MODE>> {
                     fn is_set_high(&self) -> Result<bool, Self::Error> {
                         self.is_set_low().map(|v| !v)
@@ -813,7 +912,18 @@ macro_rules! gpio {
                     }
                 }
 
-                exti!($PXi<Output<MODE>>, $extigpionr, $i, $exticri);
+                impl InputPin for $PXi<Convertible> {
+                    type Error = Infallible;
+
+                    fn is_high(&self) -> Result<bool, Self::Error> {
+                        self.is_low().map(|v| !v)
+                    }
+
+                    fn is_low(&self) -> Result<bool, Self::Error> {
+                        // NOTE(unsafe) atomic read with no side effects
+                        Ok(unsafe { (*$GPIOX::ptr()).idr.read().bits() & (1 << $i) == 0 })
+                    }
+                }
 
                 exti!($PXi<Input<MODE>>, $extigpionr, $i, $exticri);
 
