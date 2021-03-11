@@ -301,6 +301,54 @@ macro_rules! gpio {
                 }
             }
 
+            impl $PXx<Convertible> {
+                pub fn set_open_drain_pull_up(&mut self) {
+                    let offset = 2 * self.i;
+
+                    unsafe {
+                        &(*$GPIOX::ptr()).pupdr.modify(|r, w| {
+                            w.bits((r.bits() & !(0b11 << offset)) | (0b01 << offset))
+                        });
+                        &(*$GPIOX::ptr()).otyper.modify(|r, w| {
+                            w.bits(r.bits() | (0b1 << self.i))
+                        });
+                    };
+                }
+
+                pub fn set_push_pull(&mut self) {
+                    let offset = 2 * self.i;
+
+                    unsafe {
+                        &(*$GPIOX::ptr()).pupdr.modify(|r, w| {
+                            w.bits((r.bits() & !(0b11 << offset)) | (0b00 << offset))
+                        });
+                        &(*$GPIOX::ptr()).otyper.modify(|r, w| {
+                            w.bits(r.bits() & !(0b1 << self.i))
+                        });
+                    };
+                }
+
+                pub fn set_readable(&mut self) {
+                    let offset = 2 * self.i;
+
+                    unsafe {
+                        &(*$GPIOX::ptr()).moder.modify(|r, w| {
+                            w.bits((r.bits() & !(0b11 << offset)) | (0b00 << offset))
+                        })
+                    };
+                }
+
+                pub fn set_writeable(&mut self) {
+                    let offset = 2 * self.i;
+
+                    unsafe {
+                        &(*$GPIOX::ptr()).moder.modify(|r, w| {
+                            w.bits((r.bits() & !(0b11 << offset)) | (0b01 << offset))
+                        })
+                    };
+                }
+            }
+
             impl<MODE> OutputPin for $PXx<Output<MODE>> {
                 type Error = Infallible;
 
@@ -311,6 +359,34 @@ macro_rules! gpio {
                 }
 
                 fn set_low(&mut self) -> Result<(), Self::Error> {
+                    // NOTE(unsafe) atomic write to a stateless register
+                    unsafe { (*$GPIOX::ptr()).bsrr.write(|w| w.bits(1 << (self.i + 16))) };
+                    Ok(())
+                }
+            }
+
+            impl OutputPin for $PXx<Convertible> {
+                type Error = ();
+
+                fn set_high(&mut self) -> Result<(), Self::Error> {
+                    let offset = 2 * self.i;
+                    // Return an error if moder is not 0b01 (output)
+                    if unsafe { (*$GPIOX::ptr()).moder.read().bits() } & (0b11 << offset) != (0b01 << offset) {
+                        return Err(());
+                    }
+
+                    // NOTE(unsafe) atomic write to a stateless register
+                    unsafe { (*$GPIOX::ptr()).bsrr.write(|w| w.bits(1 << self.i)) };
+                    Ok(())
+                }
+
+                fn set_low(&mut self) -> Result<(), Self::Error> {
+                    let offset = 2 * self.i;
+                    // Return an error if moder is not 0b01 (output)
+                    if unsafe { (*$GPIOX::ptr()).moder.read().bits() } & (0b11 << offset) != (0b01 << offset) {
+                        return Err(());
+                    }
+
                     // NOTE(unsafe) atomic write to a stateless register
                     unsafe { (*$GPIOX::ptr()).bsrr.write(|w| w.bits(1 << (self.i + 16))) };
                     Ok(())
@@ -357,6 +433,19 @@ macro_rules! gpio {
             }
 
             exti_erased!($PXx<Output<MODE>>, $extigpionr);
+
+            impl InputPin for $PXx<Convertible> {
+                type Error = Infallible;
+
+                fn is_high(&self) -> Result<bool, Self::Error> {
+                    self.is_low().map(|v| !v)
+                }
+
+                fn is_low(&self) -> Result<bool, Self::Error> {
+                    // NOTE(unsafe) atomic read with no side effects
+                    Ok(unsafe { (*$GPIOX::ptr()).idr.read().bits() & (1 << self.i) == 0 })
+                }
+            }
 
             exti_erased!($PXx<Input<MODE>>, $extigpionr);
 
