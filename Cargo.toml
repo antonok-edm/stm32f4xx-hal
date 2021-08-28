@@ -34,7 +34,7 @@ rand_core = "0.6"
 rtcc = "0.2"
 stm32f4 = "0.13"
 synopsys-usb-otg = { version = "0.2.0", features = ["cortex-m"], optional = true }
-sdio-host = { version = "0.5.0", optional = true }
+sdio-host = { version = "0.5.0", git = "https://github.com/antonok-edm/sdio-host", branch = "emmc", optional = true }
 embedded-dma = "0.1.2"
 bare-metal = { version = "1" }
 cast = { default-features = false, version = "0.2.2" }
