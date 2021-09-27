@@ -16,9 +16,29 @@ pub trait PinD0 {}
 pub trait PinD1 {}
 pub trait PinD2 {}
 pub trait PinD3 {}
+pub trait PinD4 {}
+pub trait PinD5 {}
+pub trait PinD6 {}
+pub trait PinD7 {}
 
 pub trait Pins {
     const BUSWIDTH: Buswidth;
+}
+
+impl<CLK, CMD, D0, D1, D2, D3, D4, D5, D6, D7> Pins for (CLK, CMD, D0, D1, D2, D3, D4, D5, D6, D7)
+where
+    CLK: PinClk,
+    CMD: PinCmd,
+    D0: PinD0,
+    D1: PinD1,
+    D2: PinD2,
+    D3: PinD3,
+    D4: PinD4,
+    D5: PinD5,
+    D6: PinD6,
+    D7: PinD7,
+{
+    const BUSWIDTH: Buswidth = Buswidth::Buswidth8;
 }
 
 impl<CLK, CMD, D0, D1, D2, D3> Pins for (CLK, CMD, D0, D1, D2, D3)
@@ -43,7 +63,7 @@ where
 }
 
 macro_rules! pins {
-    ($(CLK: [$($CLK:ty),*] CMD: [$($CMD:ty),*] D0: [$($D0:ty),*] D1: [$($D1:ty),*] D2: [$($D2:ty),*] D3: [$($D3:ty),*])+) => {
+    ($(CLK: [$($CLK:ty),*] CMD: [$($CMD:ty),*] D0: [$($D0:ty),*] D1: [$($D1:ty),*] D2: [$($D2:ty),*] D3: [$($D3:ty),*] D4: [$($D4:ty),*] D5: [$($D5:ty),*] D6: [$($D6:ty),*] D7: [$($D7:ty),*])+) => {
         $(
             $(
                 impl PinClk for $CLK {}
@@ -62,6 +82,18 @@ macro_rules! pins {
             )*
             $(
                 impl PinD3 for $D3 {}
+            )*
+            $(
+                impl PinD4 for $D4 {}
+            )*
+            $(
+                impl PinD5 for $D5 {}
+            )*
+            $(
+                impl PinD6 for $D6 {}
+            )*
+            $(
+                impl PinD7 for $D7 {}
             )*
         )+
     }
@@ -92,6 +124,10 @@ pins! {
     D1: [PC9<Alternate<AF12>>]
     D2: [PC10<Alternate<AF12>>]
     D3: [PC11<Alternate<AF12>>]
+    D4: [PB8<Alternate<AF12>>]
+    D5: [PB9<Alternate<AF12>>]
+    D6: [PC6<Alternate<AF12>>]
+    D7: [PC7<Alternate<AF12>>]
 }
 
 #[cfg(any(feature = "stm32f412", feature = "stm32f413", feature = "stm32f423"))]
@@ -102,6 +138,8 @@ pins! {
     D1: [PA8<Alternate<AF12>>]
     D2: [PA9<Alternate<AF12>>]
     D3: [PB5<Alternate<AF12>>]
+    D6: [PB14<Alternate<AF12>>]
+    D7: [PB10<Alternate<AF12>>]
 }
 
 #[cfg(feature = "stm32f411")]
@@ -112,12 +150,15 @@ pins! {
     D1: [PA8<Alternate<AF12>>]
     D2: [PA9<Alternate<AF12>>]
     D3: [PB5<Alternate<AF12>>]
+    D6: [PB14<Alternate<AF12>>]
+    D7: [PB10<Alternate<AF12>>]
 }
 
 #[derive(Copy, Clone, Eq, PartialEq)]
 pub enum Buswidth {
     Buswidth1 = 0,
     Buswidth4 = 1,
+    Buswidth8 = 2,
 }
 
 enum PowerCtrl {
